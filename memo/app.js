@@ -409,6 +409,7 @@ function renderWeekSummary() {
   const text = $("week-summary-text");
   const status = $("week-summary-status");
   $("week-summary").hidden = false;
+  $("week-summary-range").textContent = $("week-range").textContent;
   button.disabled = Boolean(demo || !notebookReady || !enabled || state?.busy);
   button.textContent = state?.busy ? "小猫在写…" : summary ? "重新生成" : "让小猫总结";
   text.textContent = summary ?? "";
@@ -688,3 +689,4 @@ async function initializeNotebook() {
 
 initializeNotebook();
 startCat($("cat-art"), $("cat-trigger"));
+if (fileBacked) startWeekCat($("week-cat-portrait"));

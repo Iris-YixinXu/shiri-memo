@@ -6,10 +6,11 @@
   <meta name="theme-color" content="#f4f7ec">
   <meta name="description" content="在日历里安排待办，随手记下灵感与日记，回顾这一周的进展。">
   <title>拾日 · 个人备忘录</title>
-  <link rel="stylesheet" href="./style.css?v=2">
+  <link rel="stylesheet" href="./style.css?v=3">
   <script src="./cat.js?v=1" defer></script>
+  <script src="./week-cat.js" defer></script>
   <script src="./chat-config.js?v=1" defer></script>
-  <script src="./app.js?v=2" defer></script>
+  <script src="./app.js?v=3" defer></script>
   <script src="./dashboard-extras.js" defer></script>
   <script src="./cat-chat.js?v=2" defer></script>
 </head>
@@ -104,82 +105,89 @@
         </section>
       </div>
 
-      <section class="card agenda" aria-labelledby="agenda-title">
-        <div class="card-heading">
-          <div class="heading-title"><span class="heading-icon" data-icon="list"></span><h2 id="agenda-title">今日安排</h2></div>
-          <button class="icon-button add-button" type="button" id="agenda-add" aria-label="为所选日期新建记录" data-icon="plus"></button>
-        </div>
-        <p class="card-subtitle" id="agenda-date"></p>
-        <section class="focus-box" aria-labelledby="focus-title">
-          <div class="focus-heading">
-            <h3 id="focus-title"><span data-icon="star"></span> 重点事项</h3>
-            <label class="limit-label"><span>上限</span><select id="focus-limit" aria-label="每日重点事项上限">
-              <option value="1">1 项</option><option value="2">2 项</option><option value="3">3 项</option>
-              <option value="4">4 项</option><option value="5">5 项</option><option value="6">6 项</option>
-              <option value="7">7 项</option><option value="8">8 项</option><option value="9">9 项</option><option value="10">10 项</option>
-            </select></label>
-          </div>
-          <div id="focus-list"></div>
-        </section>
-        <section id="urgent-section" aria-labelledby="urgent-title">
-          <h3 class="section-label urgent-label" id="urgent-title"><span data-icon="clock"></span> 临近截止</h3>
-          <div class="record-list" id="urgent-list"></div>
-        </section>
-        <section class="entries" aria-labelledby="entries-title">
-          <div class="entries-heading">
-            <h3 class="section-label" id="entries-title">当天记录</h3>
-            <button class="text-button" type="button" id="all-records">全部记录</button>
-          </div>
-          <div class="record-list" id="day-list"></div>
-        </section>
-      </section>
+      <div class="planning-column">
+        <div class="planning-panels">
+          <section class="card agenda" aria-labelledby="agenda-title">
+            <div class="card-heading">
+              <div class="heading-title"><span class="heading-icon" data-icon="list"></span><h2 id="agenda-title">今日安排</h2></div>
+              <button class="icon-button add-button" type="button" id="agenda-add" aria-label="为所选日期新建记录" data-icon="plus"></button>
+            </div>
+            <p class="card-subtitle" id="agenda-date"></p>
+            <section class="focus-box" aria-labelledby="focus-title">
+              <div class="focus-heading">
+                <h3 id="focus-title"><span data-icon="star"></span> 重点事项</h3>
+                <label class="limit-label"><span>上限</span><select id="focus-limit" aria-label="每日重点事项上限">
+                  <option value="1">1 项</option><option value="2">2 项</option><option value="3">3 项</option>
+                  <option value="4">4 项</option><option value="5">5 项</option><option value="6">6 项</option>
+                  <option value="7">7 项</option><option value="8">8 项</option><option value="9">9 项</option><option value="10">10 项</option>
+                </select></label>
+              </div>
+              <div id="focus-list"></div>
+            </section>
+            <section id="urgent-section" aria-labelledby="urgent-title">
+              <h3 class="section-label urgent-label" id="urgent-title"><span data-icon="clock"></span> 临近截止</h3>
+              <div class="record-list" id="urgent-list"></div>
+            </section>
+            <section class="entries" aria-labelledby="entries-title">
+              <div class="entries-heading">
+                <h3 class="section-label" id="entries-title">当天记录</h3>
+                <button class="text-button" type="button" id="all-records">全部记录</button>
+              </div>
+              <div class="record-list" id="day-list"></div>
+            </section>
+          </section>
 
-      <section class="card weekly" aria-labelledby="weekly-title">
-        <div class="card-heading">
-          <div class="heading-title"><span class="heading-icon" data-icon="report"></span><h2 id="weekly-title">本周回顾</h2></div>
-          <div class="week-actions">
-            <button class="icon-button" id="previous-week" type="button" aria-label="上一周" data-icon="left"></button>
-            <button class="icon-button" id="next-week" type="button" aria-label="下一周" data-icon="right"></button>
-          </div>
+          <section class="card weekly" aria-labelledby="weekly-title">
+            <div class="card-heading">
+              <div class="heading-title"><span class="heading-icon" data-icon="report"></span><h2 id="weekly-title">本周回顾</h2></div>
+              <div class="week-actions">
+                <button class="icon-button" id="previous-week" type="button" aria-label="上一周" data-icon="left"></button>
+                <button class="icon-button" id="next-week" type="button" aria-label="下一周" data-icon="right"></button>
+              </div>
+            </div>
+            <p class="card-subtitle" id="week-range"></p>
+            <div class="week-overview">
+              <div class="stat"><span>已完成</span><strong id="week-done">0</strong></div>
+              <div class="stat"><span>灵感</span><strong id="week-ideas">0</strong></div>
+              <div class="stat"><span>日记</span><strong id="week-journals">0</strong></div>
+            </div>
+            <section class="recap">
+              <h3 class="section-label"><span class="recap-icon done-icon" data-icon="check"></span> 完成的事</h3>
+              <ul id="week-completed-list" class="recap-list"></ul>
+            </section>
+            <section class="recap">
+              <h3 class="section-label"><span class="recap-icon idea-icon" data-icon="bulb"></span> 灵感进展</h3>
+              <ul id="week-idea-list" class="recap-list"></ul>
+            </section>
+            <section class="recap">
+              <h3 class="section-label"><span class="recap-icon mood-icon" data-icon="heart"></span> 心情手记</h3>
+              <p class="mood-summary" id="week-mood"></p>
+              <ul id="week-journal-list" class="recap-list"></ul>
+            </section>
+            <section class="recap" id="week-photo-section" hidden>
+              <div class="entries-heading">
+                <h3 class="section-label"><span class="recap-icon photo-icon" data-icon="photo"></span> 本周照片</h3>
+                <button class="text-button" id="add-week-photo" type="button">添加照片</button>
+              </div>
+              <div class="week-gallery" id="week-photos"></div>
+            </section>
+          </section>
         </div>
-        <p class="card-subtitle" id="week-range"></p>
-        <div class="week-overview">
-          <div class="stat"><span>已完成</span><strong id="week-done">0</strong></div>
-          <div class="stat"><span>灵感</span><strong id="week-ideas">0</strong></div>
-          <div class="stat"><span>日记</span><strong id="week-journals">0</strong></div>
-        </div>
-        <section class="recap week-summary" id="week-summary" aria-labelledby="week-summary-title" hidden>
-          <div class="entries-heading">
-            <h3 class="section-label" id="week-summary-title"><span class="recap-icon photo-icon" data-icon="sparkles"></span> 小猫小结</h3>
+        <section class="card week-summary" id="week-summary" aria-labelledby="week-summary-title" hidden>
+          <div class="card-heading">
+            <div class="heading-title"><span class="heading-icon" data-icon="sparkles"></span><h2 id="week-summary-title">周报汇总</h2></div>
             <button class="button compact" type="button" id="generate-week-summary">让小猫总结</button>
           </div>
+          <p class="card-subtitle" id="week-summary-range"></p>
           <div class="week-summary-content">
-            <video class="week-cat-video" id="week-cat-video" autoplay muted loop playsinline aria-label="周报小猫" hidden></video>
-            <p class="week-summary-text" id="week-summary-text" aria-live="polite" hidden></p>
+            <div class="week-summary-copy">
+              <p class="week-summary-text" id="week-summary-text" aria-live="polite" hidden></p>
+              <p class="week-summary-status" id="week-summary-status" role="status" hidden></p>
+            </div>
+            <canvas class="week-cat-portrait" id="week-cat-portrait" role="img" aria-label="黑线小猫" width="320" height="228">黑线小猫</canvas>
           </div>
-          <p class="chat-info week-summary-status" id="week-summary-status" role="status" hidden></p>
         </section>
-        <section class="recap">
-          <h3 class="section-label"><span class="recap-icon done-icon" data-icon="check"></span> 完成的事</h3>
-          <ul id="week-completed-list" class="recap-list"></ul>
-        </section>
-        <section class="recap">
-          <h3 class="section-label"><span class="recap-icon idea-icon" data-icon="bulb"></span> 灵感进展</h3>
-          <ul id="week-idea-list" class="recap-list"></ul>
-        </section>
-        <section class="recap">
-          <h3 class="section-label"><span class="recap-icon mood-icon" data-icon="heart"></span> 心情手记</h3>
-          <p class="mood-summary" id="week-mood"></p>
-          <ul id="week-journal-list" class="recap-list"></ul>
-        </section>
-        <section class="recap" id="week-photo-section" hidden>
-          <div class="entries-heading">
-            <h3 class="section-label"><span class="recap-icon photo-icon" data-icon="photo"></span> 本周照片</h3>
-            <button class="text-button" id="add-week-photo" type="button">添加照片</button>
-          </div>
-          <div class="week-gallery" id="week-photos"></div>
-        </section>
-      </section>
+      </div>
     </div>
   </main>
 

@@ -83,8 +83,9 @@ h1 { font-family: "STZhongsong", "Songti SC", SimSun, serif; font-size: clamp(2.
 .welcome-copy { display: flex; align-items: baseline; gap: 8px; color: var(--muted); }
 .welcome-copy [data-icon] { color: #8a6c33; font-size: .875rem; }
 .sample-status { display: inline-flex; align-items: center; gap: 6px; color: #745b31; background: var(--yellow); padding: 5px 10px; border-radius: 7px; font-size: .8125rem; white-space: nowrap; }
-.dashboard { display: grid; align-items: start; gap: 17px; grid-template-columns: minmax(0, 1.44fr) minmax(0, 1.1fr) minmax(0, 1fr); }
-.left-column { display: grid; gap: 17px; min-width: 0; }
+.dashboard { display: grid; align-items: start; gap: 17px; grid-template-columns: minmax(0, 1.44fr) minmax(0, 2.1fr); }
+.left-column, .planning-column, .planning-panels { display: grid; align-items: start; gap: 17px; min-width: 0; }
+.planning-panels { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
 .card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 17px; padding: 20px; box-shadow: 0 3px 10px #2b442808; }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
 .heading-title { gap: 10px; min-width: 0; }
@@ -222,10 +223,15 @@ select {
 .idea-icon { background: #f9eaf4; color: #a33674; }
 .mood-icon { background: #f1ebf8; color: #735a98; }
 .photo-icon { background: #faeaf0; color: #874763; }
-.week-summary-content { display: flex; gap: 8px; align-items: start; }
-.week-cat-video { flex: none; width: min(26%, 78px); aspect-ratio: 1; margin-top: 8px; border-radius: 8px; object-fit: contain; }
-.week-summary-text { flex: 1; min-width: 0; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #f5eef9; font-size: .875rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-.week-summary-status { margin: 6px 0 0; }
+.week-summary { background: linear-gradient(130deg, var(--surface), #faf4fb); border-color: #e9dfed; }
+.week-summary .heading-icon { background: var(--lavender); color: #694e83; }
+.week-summary .card-subtitle { margin-bottom: 12px; }
+.week-summary-content { display: flex; gap: 14px; align-items: center; min-height: 62px; }
+.week-summary-copy { flex: 1; min-width: 0; }
+.week-cat-portrait { flex: none; width: min(28%, 124px); height: auto; }
+.week-summary-text { padding: 10px 12px; border-radius: 10px; background: #f5eef9; font-size: .9375rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.week-summary-status { margin: 0; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.week-summary-text:not([hidden]) + .week-summary-status { margin-top: 6px; }
 .week-summary button:disabled { opacity: .65; cursor: default; }
 .week-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
 .week-gallery > .empty-note { grid-column: 1 / -1; }
@@ -260,13 +266,14 @@ dialog::backdrop { background: #1b34255e; }
 @media (min-width: 1350px) {
   .topbar-inner, .shell { width: min(100% - 104px, 1450px); }
   .card { padding: 23px; }
-  .dashboard, .left-column { gap: 20px; }
+  .dashboard, .left-column, .planning-column, .planning-panels { gap: 20px; }
   .calendar-day { min-height: 51px; }
 }
 @media (max-width: 1080px) {
   .topbar-inner, .shell { width: calc(100% - 36px); }
   .dashboard { grid-template-columns: minmax(0, 1.17fr) minmax(0, 1fr); }
-  .weekly { grid-column: 1 / -1; }
+  .planning-column, .planning-panels { display: contents; }
+  .weekly, .week-summary { grid-column: 1 / -1; }
 }
 @media (max-width: 650px) {
   .topbar-inner, .shell { width: calc(100% - 24px); }
