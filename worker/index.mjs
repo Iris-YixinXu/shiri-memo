@@ -1,6 +1,6 @@
 import { CAT_PROMPT } from "./cat-prompt.mjs";
+import { completeDeepSeek } from "./deepseek.mjs";
 
-const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const MAX_MESSAGES = 11;
 const MAX_USER_LENGTH = 1800;
 const MAX_ASSISTANT_LENGTH = 4000;
@@ -87,25 +87,17 @@ export default {
     if (!messages) return json({ error: "消息格式有误或内容过长。" }, 400, headers);
 
     try {
-      const result = await fetch(DEEPSEEK_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
-        body: JSON.stringify({
-          model: "deepseek-flash",
-          thinking: { type: "disabled" },
-          max_tokens: 450,
-          messages: [{ role: "system", content: CAT_PROMPT }, ...messages],
-        }),
-        signal: AbortSignal.timeout(24000),
-        redirect: "error",
-      });
-      if (!result.ok) return json({ error: "小猫暂时连不上 DeepSeek，请稍后再试。" }, 502, headers);
-      const completion = await result.json();
-      const answer = completion.choices?.[0]?.message?.content;
-      if (typeof answer !== "string" || !answer.trim()) {
-        return json({ error: "这次没有收到小猫的回复，请再试一次。" }, 502, headers);
+      const answer = await completeDeepSeek(env.DEEPSEEK_API_KEY, [{ role: "system", content: CAT_PROMPT }, ...messages], 450);
+      if (!answer) return json({ error: "这次没有收到小猫的回复，请稍后再试。" }, 502, headers);
+      const result = { reply: answer.slice(0, MAX_ASSISTANT_LENGTH) };
+      if (typeof env.RECORD_CHAT === "function") {
+        try {
+          result.historySaved = await env.RECORD_CHAT(messages.at(-1).content, result.reply);
+        } catch {
+          result.historySaved = false;
+        }
       }
-      return json({ reply: answer.trim().slice(0, MAX_ASSISTANT_LENGTH) }, 200, headers);
+      return json(result, 200, headers);
     } catch {
       return json({ error: "小猫暂时连不上 DeepSeek，请稍后再试。" }, 502, headers);
     }

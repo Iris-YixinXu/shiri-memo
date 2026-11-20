@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#f4f7ec">
   <meta name="description" content="在日历里安排待办，随手记下灵感与日记，回顾这一周的进展。">
   <title>拾日 · 个人备忘录</title>
-  <link rel="stylesheet" href="./style.css">
-  <script src="./cat.js" defer></script>
-  <script src="./app.js" defer></script>
+  <link rel="stylesheet" href="./style.css?v=2">
+  <script src="./cat.js?v=1" defer></script>
+  <script src="./chat-config.js?v=1" defer></script>
+  <script src="./app.js?v=2" defer></script>
   <script src="./dashboard-extras.js" defer></script>
-  <script src="./chat-config.js" defer></script>
-  <script src="./cat-chat.js" defer></script>
+  <script src="./cat-chat.js?v=2" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +21,7 @@
         <span><strong>拾日</strong><small>个人备忘录</small></span>
       </div>
       <div class="header-actions">
-        <span class="storage-label"><span data-icon="lock"></span> 本机保存</span>
+        <span class="storage-label"><span data-icon="lock"></span><span id="storage-label">本机保存</span></span>
         <button class="button secondary demo-button" id="demo-toggle" type="button">退出示例</button>
         <button class="button primary" id="new-record" type="button"><span data-icon="plus"></span> 新建记录</button>
       </div>
@@ -71,11 +71,36 @@
               <div class="heading-title"><span class="heading-icon" data-icon="sparkles"></span><h2 id="cat-title">AI 小猫</h2></div>
               <p>聊聊今天的心情，让小猫陪你理一理。</p>
             </div>
-            <button type="button" class="cat-pet" id="cat-pet" aria-label="随机切换小猫表情" title="点一下，随机换个表情">
-              <canvas class="cat-art" id="cat-art" role="img" aria-label="简笔画小猫" width="420" height="300">简笔画小猫</canvas>
+            <button class="cat-trigger" id="cat-trigger" type="button" aria-label="和小猫互动">
+              <img class="cat-art" id="cat-art" src="./cat-1.gif" alt="" width="128" height="128">
             </button>
           </div>
-          <button type="button" class="cat-chat-entry" id="cat-chat-open"><span data-icon="message"></span> 和小猫聊天</button>
+          <div class="cat-chat-window" id="cat-chat-window" aria-label="和小猫聊天">
+            <div class="chat-log" id="cat-chat-log" role="log" aria-label="与小猫的聊天记录" tabindex="0">
+              <p class="chat-message assistant">喵喵，主人今天心情怎么样呀喵？</p>
+            </div>
+            <div class="chat-quick-actions" id="cat-quick-chat" aria-label="快速回复" hidden>
+              <button type="button" data-chat-topic="hello">喵一声</button>
+              <button type="button" data-chat-topic="tired">今天有点累</button>
+              <button type="button" data-chat-topic="idea">给个小提示</button>
+              <button type="button" data-chat-topic="hug">想要抱抱</button>
+            </div>
+            <p class="chat-info" id="cat-chat-unavailable" hidden>在本机 worker/.dev.vars 填好你的 DeepSeek API Key，保存后刷新即可自由聊天。</p>
+            <form id="cat-chat-form" hidden>
+              <label class="field" id="cat-code-field" hidden>聊天口令
+                <input id="cat-chat-code" type="password" maxlength="120" autocomplete="off" spellcheck="false" placeholder="输入站点管理员给你的口令">
+              </label>
+              <div class="chat-composer">
+                <textarea id="cat-chat-input" rows="2" maxlength="1800" aria-label="你的消息" placeholder="跟小猫说点什么…" required></textarea>
+                <button class="button primary" id="cat-chat-send" type="submit">发送</button>
+              </div>
+              <p class="form-error" id="cat-chat-status" role="status" hidden></p>
+              <div class="chat-footer">
+                <span id="cat-chat-note">发送的消息由 DeepSeek 回复</span>
+                <button class="text-button" id="cat-chat-clear" type="button">清空</button>
+              </div>
+            </form>
+          </div>
         </section>
       </div>
 
@@ -123,6 +148,17 @@
           <div class="stat"><span>灵感</span><strong id="week-ideas">0</strong></div>
           <div class="stat"><span>日记</span><strong id="week-journals">0</strong></div>
         </div>
+        <section class="recap week-summary" id="week-summary" aria-labelledby="week-summary-title" hidden>
+          <div class="entries-heading">
+            <h3 class="section-label" id="week-summary-title"><span class="recap-icon photo-icon" data-icon="sparkles"></span> 小猫小结</h3>
+            <button class="button compact" type="button" id="generate-week-summary">让小猫总结</button>
+          </div>
+          <div class="week-summary-content">
+            <video class="week-cat-video" id="week-cat-video" autoplay muted loop playsinline aria-label="周报小猫" hidden></video>
+            <p class="week-summary-text" id="week-summary-text" aria-live="polite" hidden></p>
+          </div>
+          <p class="chat-info week-summary-status" id="week-summary-status" role="status" hidden></p>
+        </section>
         <section class="recap">
           <h3 class="section-label"><span class="recap-icon done-icon" data-icon="check"></span> 完成的事</h3>
           <ul id="week-completed-list" class="recap-list"></ul>
@@ -136,34 +172,16 @@
           <p class="mood-summary" id="week-mood"></p>
           <ul id="week-journal-list" class="recap-list"></ul>
         </section>
+        <section class="recap" id="week-photo-section" hidden>
+          <div class="entries-heading">
+            <h3 class="section-label"><span class="recap-icon photo-icon" data-icon="photo"></span> 本周照片</h3>
+            <button class="text-button" id="add-week-photo" type="button">添加照片</button>
+          </div>
+          <div class="week-gallery" id="week-photos"></div>
+        </section>
       </section>
     </div>
   </main>
-
-  <dialog class="cat-chat-dialog" id="cat-chat-dialog" aria-labelledby="cat-chat-title">
-    <div class="dialog-heading">
-      <div class="heading-title"><span class="heading-icon" data-icon="sparkles"></span><h2 id="cat-chat-title">和小猫聊天</h2></div>
-      <button class="icon-button" id="cat-chat-close" type="button" aria-label="关闭聊天" data-icon="close"></button>
-    </div>
-    <div class="chat-log" id="cat-chat-log" role="log" aria-label="与小猫的聊天记录">
-      <p class="chat-message assistant">喵喵，主人今天心情怎么样呀喵？</p>
-    </div>
-    <p class="chat-info" id="cat-chat-unavailable" hidden>聊天服务还在准备中。</p>
-    <form id="cat-chat-form" hidden>
-      <label class="field" id="cat-code-field">聊天口令
-        <input id="cat-chat-code" type="password" maxlength="120" autocomplete="off" spellcheck="false" placeholder="输入站点管理员给你的口令">
-      </label>
-      <label class="field">你的消息
-        <textarea id="cat-chat-input" rows="3" maxlength="1800" placeholder="今天，想和小猫说点什么？" required></textarea>
-      </label>
-      <p class="chat-info">发送的消息会交给 DeepSeek 回复。手账记录由你自己决定要不要分享。</p>
-      <p class="form-error" id="cat-chat-status" role="status" hidden></p>
-      <div class="dialog-actions">
-        <button class="button secondary" id="cat-chat-clear" type="button">清空聊天</button>
-        <button class="button primary" id="cat-chat-send" type="submit">发送</button>
-      </div>
-    </form>
-  </dialog>
 
   <dialog id="weather-dialog" aria-labelledby="weather-title">
     <div class="dialog-heading">
@@ -194,11 +212,18 @@
         <option value="">暂不选择</option><option>开心</option><option>平静</option><option>疲惫</option><option>低落</option><option>焦虑</option>
       </select></label>
       <label class="field">正文<textarea name="body" rows="5" maxlength="20000" placeholder="想多记一点的话，写在这里。"></textarea></label>
+      <div id="record-photo-section" hidden>
+        <label class="field">照片
+          <input id="record-photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" multiple aria-describedby="record-photo-hint">
+          <small class="photo-hint" id="record-photo-hint">每条最多 6 张，每张最多 10 MB。</small>
+        </label>
+        <div id="record-photo-list" class="record-gallery"></div>
+      </div>
       <p class="form-error" id="record-error" role="alert" hidden></p>
       <div class="dialog-actions">
         <button class="button danger" id="delete-record" type="button" hidden>删除记录</button>
         <button class="button secondary" id="cancel-record" type="button">取消</button>
-        <button class="button primary" type="submit">保存记录</button>
+        <button class="button primary" id="save-record" type="submit">保存记录</button>
       </div>
     </form>
   </dialog>

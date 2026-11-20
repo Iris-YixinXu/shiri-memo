@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 const types = {
   deadline: "DDL",
   event: "活动",
+  exam: "考试",
   idea: "灵感",
   journal: "日记",
   note: "备忘",
@@ -33,6 +34,7 @@ const drawings = {
   check: '<path d="m5 12 4 4L19 6"/>',
   bulb: '<path d="M9 18h6m-5 3h4m-5-6c0-2-3-3-3-7a6 6 0 1 1 12 0c0 4-3 5-3 7H9Z"/>',
   heart: '<path d="M12 20 4.5 12.5A4.75 4.75 0 0 1 11 5.6l1 1 1-1a4.75 4.75 0 0 1 6.5 6.9L12 20Z"/>',
+  photo: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1.5"/><path d="m3 17 4-4 3 3 4-5 7 7"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
 };
 const storageKey = "shiri.memo.v1";
@@ -43,9 +45,14 @@ const shortDate = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "num
 const form = $("record-form");
 const recordDialog = $("record-dialog");
 const libraryDialog = $("library-dialog");
-const editableTypes = new Set(["deadline", "event", "idea", "note"]);
+const editableTypes = new Set(["deadline", "event", "exam", "idea", "note"]);
+const fileBacked = typeof SHIRI_FILE_STORAGE !== "undefined" && SHIRI_FILE_STORAGE;
 let storageError = false;
 let personal = readState();
+const browserSnapshot = personal;
+let storageRevision = null;
+let notebookReady = !fileBacked;
+let notebookSaving = false;
 let example = exampleState();
 let demo = personal === null && !storageError;
 personal ??= emptyState();
@@ -53,7 +60,9 @@ let selected = today;
 let month = today.slice(0, 7);
 let week = currentWeek;
 let editing = null;
+let recordPhotos = [];
 let toastTimer;
+const weekSummaries = new Map();
 
 function dateKey(date) {
   return [String(date.getFullYear()).padStart(4, "0"), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
@@ -100,6 +109,7 @@ function exampleState() {
   const samples = [
     ["plan", "deadline", "提交项目阶段总结", offsetDate(today, 1), "梳理完成项和下一步计划。"],
     ["reading", "event", "傍晚的读书会", today, "带上这次读到一半的书。"],
+    ["exam", "exam", "英语听力考试", today, "提前准备耳机和文具。"],
     ["idea", "idea", "给周末做一份散步地图", today, "把喜欢的书店和咖啡馆标在同一张地图上。"],
     ["journal", "journal", "在路上看到一棵金黄的树", today, "绕路走了一会儿，心情也慢慢放松下来。", "", "平静"],
     ["done", "note", "整理上周的读书笔记", today, "按主题整理并补上几句摘录。", today],
@@ -118,22 +128,62 @@ function state() {
   return demo ? example : personal;
 }
 
-function updateState(next, inDemo = demo) {
+function notebookError(message) {
+  if (recordDialog.open) {
+    $("record-error").textContent = message;
+    $("record-error").hidden = false;
+  } else {
+    showToast(message);
+  }
+}
+
+async function localSnapshot(response) {
+  if (!response.headers.get("Content-Type")?.includes("application/json")) {
+    throw new Error("无法连接本机手账，请重新启动本机版。");
+  }
+  const snapshot = await response.json();
+  if (!response.ok) throw new Error(snapshot.error ?? "暂时无法保存本机手账。");
+  return snapshot;
+}
+
+async function saveLocalState(state, upload) {
+  const snapshot = JSON.stringify({ state, revision: storageRevision, photoRecord: upload?.recordId });
+  let options = { headers: { "Content-Type": "application/json" }, body: snapshot };
+  if (upload?.files.length) {
+    const body = new FormData();
+    body.append("snapshot", snapshot);
+    for (const file of upload.files) body.append("photo", file);
+    options = { body };
+  }
+  return localSnapshot(await fetch("/api/records", { method: "PUT", ...options }));
+}
+
+async function updateState(next, inDemo = demo, upload) {
+  if (!notebookReady || notebookSaving) {
+    notebookError(notebookSaving ? "正在保存，请稍等。" : "本机手账尚未读入，请刷新后再试。");
+    return false;
+  }
   if (inDemo) {
     example = next;
   } else {
+    notebookSaving = true;
+    $("save-record").disabled = $("delete-record").disabled = true;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      personal = next;
-    } catch {
-      const message = "浏览器暂时无法保存记录，请检查站点存储设置。";
-      if (recordDialog.open) {
-        $("record-error").textContent = message;
-        $("record-error").hidden = false;
+      if (fileBacked) {
+        const saved = await saveLocalState(next, upload);
+        personal = saved.state;
+        storageRevision = saved.revision;
       } else {
-        showToast(message);
+        localStorage.setItem(storageKey, JSON.stringify(next));
+        personal = next;
       }
+    } catch (error) {
+      notebookError(fileBacked ? (error instanceof TypeError ? "本机手账暂时无法连接，请重试。" : error.message) :
+        "浏览器暂时无法保存记录，请检查站点存储设置。");
       return false;
+    } finally {
+      notebookSaving = false;
+      $("save-record").disabled = $("delete-record").disabled = false;
     }
   }
   render();
@@ -269,6 +319,7 @@ function recordRow(record, urgent = false) {
   meta.append(typeTag(record.type), element("span", "", shortDate.format(parseDate(record.date))));
   if (urgent) meta.append(element("span", "urgent-time", urgency(record.date)));
   if (record.mood) meta.append(element("span", "", record.mood));
+  if (record.photos?.length) meta.append(element("span", "", `${record.photos.length} 张照片`));
   main.append(element("span", "record-title", record.title), meta);
   row.append(main);
   if (editableTypes.has(record.type)) {
@@ -343,6 +394,110 @@ function renderWeekly() {
   $("week-mood").textContent = moods.size ? [...moods].map(([mood, count]) => `${mood} ${count} 次`).join(" · ") :
     (journals.length ? "这周的日记还没有选择心情。" : "这周还没有日记。");
   renderRecap("week-journal-list", journals, "", (record) => record.mood);
+  if (fileBacked) {
+    renderWeekSummary();
+    renderWeeklyPhotos(sortByDate(records.filter((record) => inWeek(record.date) && record.photos?.length)));
+  }
+}
+
+function renderWeekSummary() {
+  const enabled = Boolean(CAT_CHAT_ENDPOINT);
+  const state = weekSummaries.get(week);
+  const current = state?.revision === storageRevision ? state : undefined;
+  const summary = !demo ? current?.summary : "";
+  const button = $("generate-week-summary");
+  const text = $("week-summary-text");
+  const status = $("week-summary-status");
+  $("week-summary").hidden = false;
+  button.disabled = Boolean(demo || !notebookReady || !enabled || state?.busy);
+  button.textContent = state?.busy ? "小猫在写…" : summary ? "重新生成" : "让小猫总结";
+  text.textContent = summary ?? "";
+  text.hidden = !summary;
+  status.textContent = !enabled ? "填好本机的 DeepSeek API Key 后即可生成。" :
+    demo ? "退出示例后，可以用自己的记录生成小结。" :
+    current?.error ?? (summary ? "" : "点击后会发送所选周的对话摘录、事项标题、日期、状态和心情统计。");
+  status.hidden = !status.textContent;
+}
+
+async function askForWeekSummary() {
+  if (!fileBacked || !notebookReady || notebookSaving || demo || !CAT_CHAT_ENDPOINT) return;
+  const start = week;
+  const previous = weekSummaries.get(start);
+  if (previous?.busy) return;
+  const priorText = previous?.revision === storageRevision ? previous.summary : undefined;
+  const revision = storageRevision;
+  const pending = { busy: true, revision, summary: priorText };
+  weekSummaries.set(start, pending);
+  renderWeekSummary();
+  try {
+    const result = await localSnapshot(await fetch(`/api/week-summary?week=${encodeURIComponent(start)}`, { method: "POST" }));
+    if (weekSummaries.get(start) !== pending) return;
+    if (result.revision === storageRevision) {
+      weekSummaries.set(start, { revision: result.revision, summary: result.summary });
+    } else {
+      weekSummaries.set(start, { revision: storageRevision, error: "记录刚刚有变动。请刷新手账后重新生成。" });
+    }
+  } catch (error) {
+    if (weekSummaries.get(start) !== pending) return;
+    const message = error instanceof TypeError ? "暂时无法连接本机小猫，请再试一次。" : error.message;
+    weekSummaries.set(start, { revision, summary: priorText, error: message });
+  }
+  renderWeekSummary();
+}
+
+function invalidateWeekSummary(start) {
+  if (start) weekSummaries.delete(start);
+  else weekSummaries.clear();
+  if (fileBacked) renderWeekSummary();
+}
+
+function photoTile(photo, description) {
+  const tile = element("figure", "photo-tile");
+  const fullSize = element("a");
+  fullSize.href = `/api/photos/${encodeURIComponent(photo.date)}/${encodeURIComponent(photo.file)}`;
+  fullSize.target = "_blank";
+  fullSize.rel = "noopener";
+  const thumbnail = element("img");
+  thumbnail.src = fullSize.href;
+  thumbnail.alt = description;
+  thumbnail.loading = "lazy";
+  fullSize.append(thumbnail);
+  tile.append(fullSize);
+  return tile;
+}
+
+function renderWeeklyPhotos(records) {
+  $("week-photo-section").hidden = false;
+  const photos = records.flatMap((record) => record.photos.map((photo) => {
+    const tile = photoTile(photo, record.title);
+    const description = element("figcaption", "", `${shortDate.format(parseDate(record.date))} · `);
+    const entry = element("button", "text-button", record.title);
+    entry.type = "button";
+    entry.addEventListener("click", () => openRecord(record));
+    description.append(entry);
+    tile.append(description);
+    return tile;
+  }));
+  $("week-photos").replaceChildren(...(photos.length ? photos : [element("p", "empty-note", "这周还没有照片。")]));
+}
+
+function renderRecordPhotos() {
+  const tiles = recordPhotos.map((photo) => {
+    const tile = photoTile(photo, photo.name);
+    const description = element("figcaption");
+    const remove = element("button", "text-button", "移除");
+    remove.type = "button";
+    remove.setAttribute("aria-label", `移除照片 ${photo.name}`);
+    remove.addEventListener("click", () => {
+      if (notebookSaving) return;
+      recordPhotos = recordPhotos.filter((item) => item.file !== photo.file);
+      renderRecordPhotos();
+    });
+    description.append(remove);
+    tile.append(description);
+    return tile;
+  });
+  $("record-photo-list").replaceChildren(...tiles);
 }
 
 function renderLibrary() {
@@ -376,11 +531,17 @@ function updateRecordFields() {
   const isJournal = category === "journal";
   $("mood-field").hidden = !isJournal;
   $("record-mood").disabled = !isJournal;
-  $("record-date-label").textContent = category === "deadline" ? "截止日期" : category === "event" ? "活动日期" : "记录日期";
+  const dateLabels = { deadline: "截止日期", event: "活动日期", exam: "考试日期" };
+  $("record-date-label").textContent = dateLabels[category] ?? "记录日期";
 }
 
-function openRecord(record = null) {
+function openRecord(record = null, defaultDate = selected) {
+  if (!notebookReady) {
+    notebookError("本机手账尚未读入，请刷新后再试。");
+    return;
+  }
   editing = record;
+  recordPhotos = record?.photos ?? [];
   form.reset();
   form.elements.title.setCustomValidity("");
   $("record-title").textContent = record ? (demo ? "编辑示例记录" : "编辑记录") : "新建记录";
@@ -388,16 +549,20 @@ function openRecord(record = null) {
   $("record-error").hidden = true;
   form.elements.title.value = record?.title ?? "";
   form.elements.type.value = record?.type ?? "note";
-  form.elements.date.value = record?.date ?? selected;
+  form.elements.date.value = record?.date ?? defaultDate;
   form.elements.body.value = record?.body ?? "";
   form.elements.mood.value = record?.mood ?? "";
   $("delete-record").hidden = record === null;
+  $("record-photo-section").hidden = !fileBacked || Boolean(record && demo);
+  renderRecordPhotos();
   updateRecordFields();
   recordDialog.showModal();
 }
 
-function saveRecord(event) {
+async function saveRecord(event) {
   event.preventDefault();
+  if (notebookSaving) return;
+  $("record-error").hidden = true;
   const title = form.elements.title.value.trim();
   if (!title) {
     form.elements.title.setCustomValidity("请输入标题。");
@@ -415,25 +580,33 @@ function saveRecord(event) {
     mood: type === "journal" ? form.elements.mood.value : "",
   };
   const inDemo = Boolean(demo && editing);
+  const files = fileBacked && !inDemo ? Array.from($("record-photos").files) : [];
+  if (files.length + recordPhotos.length > 6 || files.some((file) => !file.size || file.size > 10 * 1024 * 1024)) {
+    notebookError("每条记录最多 6 张照片，每张最多 10 MB。");
+    return;
+  }
+  if (fileBacked && !inDemo) record.photos = recordPhotos;
   const data = inDemo ? example : personal;
   const records = editing ? data.records.map((item) => item.id === record.id ? record : item) : [...data.records, record];
   const focus = editableTypes.has(type) ? data.focus : removeFocus(data.focus, record.id);
-  if (!updateState({ ...data, records, focus }, inDemo)) return;
+  if (!await updateState({ ...data, records, focus }, inDemo, { files, recordId: record.id })) return;
   demo = inDemo;
   recordDialog.close();
   selectDate(record.date);
-  showToast(inDemo ? "示例已更新。" : "记录已保存在此浏览器。");
+  showToast(inDemo ? "示例已更新。" : fileBacked ? "已保存到本机手账。" : "记录已保存在此浏览器。");
 }
 
 function removeFocus(focus, id) {
   return Object.fromEntries(Object.entries(focus).map(([key, ids]) => [key, ids.filter((item) => item !== id)]));
 }
 
-function deleteRecord() {
-  if (!editing || !window.confirm(`删除「${editing.title}」？`)) return;
+async function deleteRecord() {
+  if (!editing || notebookSaving) return;
+  const warning = editing.photos?.length ? "及其照片" : "";
+  if (!window.confirm(`删除「${editing.title}」${warning}？`)) return;
   const data = state();
   const records = data.records.filter((record) => record.id !== editing.id);
-  if (!updateState({ ...data, records, focus: removeFocus(data.focus, editing.id) })) return;
+  if (!await updateState({ ...data, records, focus: removeFocus(data.focus, editing.id) })) return;
   recordDialog.close();
   showToast("已删除记录。");
 }
@@ -454,8 +627,14 @@ $("previous-week").addEventListener("click", () => { week = offsetDate(week, -7)
 $("next-week").addEventListener("click", () => { week = offsetDate(week, 7); renderWeekly(); });
 $("new-record").addEventListener("click", () => openRecord());
 $("agenda-add").addEventListener("click", () => openRecord());
-$("record-close").addEventListener("click", () => recordDialog.close());
-$("cancel-record").addEventListener("click", () => recordDialog.close());
+$("record-close").addEventListener("click", () => { if (!notebookSaving) recordDialog.close(); });
+$("cancel-record").addEventListener("click", () => { if (!notebookSaving) recordDialog.close(); });
+recordDialog.addEventListener("cancel", (event) => { if (notebookSaving) event.preventDefault(); });
+$("add-week-photo").addEventListener("click", () => {
+  const day = startOfWeek(selected) === week ? selected : week;
+  openRecord(null, day);
+});
+$("generate-week-summary").addEventListener("click", askForWeekSummary);
 $("delete-record").addEventListener("click", deleteRecord);
 $("record-type").addEventListener("change", updateRecordFields);
 form.elements.title.addEventListener("input", () => form.elements.title.setCustomValidity(""));
@@ -464,25 +643,48 @@ $("all-records").addEventListener("click", () => { renderLibrary(); libraryDialo
 $("library-close").addEventListener("click", () => libraryDialog.close());
 $("library-query").addEventListener("input", renderLibrary);
 $("library-type").addEventListener("change", renderLibrary);
-$("demo-toggle").addEventListener("click", () => {
+$("demo-toggle").addEventListener("click", async () => {
   if (demo) {
-    if (!updateState(personal, false)) return;
+    if (!await updateState(personal, false)) return;
     demo = false;
   } else {
     demo = true;
   }
   selectDate(today);
 });
-$("focus-limit").addEventListener("change", (event) => {
-  const limit = Number(event.target.value);
+$("focus-limit").addEventListener("change", async (event) => {
+  const input = event.target;
+  const limit = Number(input.value);
   const data = state();
   if (Object.values(data.focus).some((ids) => ids.length > limit)) {
-    event.target.value = String(data.limit);
+    input.value = String(data.limit);
     showToast("还有日期超过新上限，请先取消多余的星标。");
     return;
   }
-  if (!updateState({ ...data, limit })) event.target.value = String(data.limit);
+  if (!await updateState({ ...data, limit })) input.value = String(data.limit);
 });
-render();
-startCat($("cat-art"), $("cat-pet"));
-if (storageError) showToast("暂时无法读取此浏览器中的记录。");
+
+async function initializeNotebook() {
+  if (fileBacked) {
+    $("storage-label").textContent = "存入本机文件";
+    try {
+      let snapshot = await localSnapshot(await fetch("/api/records"));
+      storageRevision = snapshot.revision;
+      if (!snapshot.state && browserSnapshot) snapshot = await saveLocalState(browserSnapshot);
+      if (snapshot.state) {
+        personal = snapshot.state;
+        demo = false;
+      }
+      storageRevision = snapshot.revision;
+      notebookReady = true;
+    } catch (error) {
+      notebookError(error instanceof TypeError ? "暂时无法连接本机手账。" : error.message);
+    }
+  } else if (storageError) {
+    showToast("暂时无法读取此浏览器中的记录。");
+  }
+  render();
+}
+
+initializeNotebook();
+startCat($("cat-art"), $("cat-trigger"));
