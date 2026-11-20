@@ -6,13 +6,17 @@
   <meta name="theme-color" content="#f4f7ec">
   <meta name="description" content="在日历里安排待办，随手记下灵感与日记，回顾这一周的进展。">
   <title>拾日 · 个人备忘录</title>
-  <link rel="stylesheet" href="./style.css?v=3">
+  <link rel="stylesheet" href="./style.css?v=4">
   <script src="./cat.js?v=1" defer></script>
   <script src="./week-cat.js" defer></script>
-  <script src="./chat-config.js?v=1" defer></script>
-  <script src="./app.js?v=3" defer></script>
-  <script src="./dashboard-extras.js" defer></script>
-  <script src="./cat-chat.js?v=2" defer></script>
+  <script src="./chat-config.js?v=2" defer></script>
+  <script src="./online-config.js" defer></script>
+  <script src="./online.js" defer></script>
+  <script src="./browser-photos.js" defer></script>
+  <script src="./qwen.js" defer></script>
+  <script src="./app.js?v=4" defer></script>
+  <script src="./dashboard-extras.js?v=2" defer></script>
+  <script src="./cat-chat.js?v=3" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -24,6 +28,7 @@
       <div class="header-actions">
         <span class="storage-label"><span data-icon="lock"></span><span id="storage-label">本机保存</span></span>
         <button class="button secondary demo-button" id="demo-toggle" type="button">退出示例</button>
+        <button class="button secondary" id="account-open" type="button" hidden>登录</button>
         <button class="button primary" id="new-record" type="button"><span data-icon="plus"></span> 新建记录</button>
       </div>
     </div>
@@ -85,6 +90,10 @@
               <button type="button" data-chat-topic="tired">今天有点累</button>
               <button type="button" data-chat-topic="idea">给个小提示</button>
               <button type="button" data-chat-topic="hug">想要抱抱</button>
+            </div>
+            <div class="chat-quick-actions" id="qwen-model-controls" hidden>
+              <button type="button" id="qwen-load">启用 Qwen3 对话</button>
+              <span class="chat-info" id="qwen-status" role="status"></span>
             </div>
             <p class="chat-info" id="cat-chat-unavailable" hidden>在本机 worker/.dev.vars 填好你的 DeepSeek API Key，保存后刷新即可自由聊天。</p>
             <form id="cat-chat-form" hidden>
@@ -190,6 +199,26 @@
       </div>
     </div>
   </main>
+
+  <dialog id="account-dialog" aria-labelledby="account-title">
+    <div class="dialog-heading">
+      <h2 id="account-title">拾日账号</h2>
+      <button class="icon-button" id="account-close" type="button" aria-label="关闭" data-icon="close"></button>
+    </div>
+    <p class="form-note" id="account-status" role="status"></p>
+    <form id="account-form" hidden>
+      <label class="field">邮箱<input id="account-email" type="email" maxlength="254" autocomplete="email" required></label>
+      <label class="field">密码<input id="account-password" type="password" minlength="8" autocomplete="current-password" required></label>
+      <div class="dialog-actions">
+        <button class="button secondary" name="register" type="submit">注册</button>
+        <button class="button primary" name="sign-in" type="submit">登录</button>
+      </div>
+    </form>
+    <div class="dialog-actions" id="account-actions" hidden>
+      <button class="button secondary" id="account-import" type="button" hidden>导入此浏览器记录</button>
+      <button class="button primary" id="account-logout" type="button">退出账号</button>
+    </div>
+  </dialog>
 
   <dialog id="weather-dialog" aria-labelledby="weather-title">
     <div class="dialog-heading">

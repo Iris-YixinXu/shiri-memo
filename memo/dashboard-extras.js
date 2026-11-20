@@ -26,6 +26,7 @@ let citySearchRequest;
 let displayedQuoteDay = "";
 let quoteRequestedAt = 0;
 let quoteReady = false;
+let browserQuotePending = false;
 
 function readPreference(key) {
   try {
@@ -57,6 +58,29 @@ async function refreshDailyQuote() {
     quoteRequestedAt = 0;
     const dayIndex = Date.parse(todayInChina) / 86400000;
     $("daily-quote").textContent = dailyLines[dayIndex % dailyLines.length];
+  }
+  if (browserModel) {
+    const stored = readPreference("shiri.qwen-quote.v1");
+    if (stored?.date === todayInChina && typeof stored.quote === "string") {
+      $("daily-quote").textContent = stored.quote;
+      return;
+    }
+    if (quoteReady || browserQuotePending || !ShiriQwen.ready() || Date.now() - quoteRequestedAt < 10 * 60000) return;
+    quoteRequestedAt = Date.now();
+    browserQuotePending = true;
+    try {
+      const quote = await ShiriQwen.complete([{ role: "user", content: "用中文给个人手账写一句自然温暖的今日寄语，只输出一句话，不加标题或引号。" }], 64);
+      if (quote.length <= 100 && !/[\r\n]/.test(quote) && displayedQuoteDay === todayInChina) {
+        $("daily-quote").textContent = quote;
+        savePreference("shiri.qwen-quote.v1", { date: todayInChina, quote });
+        quoteReady = true;
+      }
+    } catch {
+      // The built-in quote remains available if browser inference fails.
+    } finally {
+      browserQuotePending = false;
+    }
+    return;
   }
   if (location.protocol === "file:" || quoteReady || Date.now() - quoteRequestedAt < 10 * 60000) return;
   quoteRequestedAt = Date.now();
@@ -207,3 +231,4 @@ refreshDailyQuote();
 refreshWeather();
 window.setInterval(refreshDashboardExtras, 60000);
 document.addEventListener("visibilitychange", refreshDashboardExtras);
+document.addEventListener("shiri:qwen-ready", refreshDailyQuote);

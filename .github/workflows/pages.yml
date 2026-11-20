@@ -3,9 +3,6 @@ name: Publish 拾日
 on:
   push:
     branches: [main]
-  schedule:
-    # 00:07 in Asia/Shanghai.
-    - cron: "7 16 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -21,12 +18,41 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: actions/configure-pages@v5
-        id: pages
-      - name: Prepare the daily quote
+      - name: Set the public account configuration
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          PAGES_URL: ${{ steps.pages.outputs.base_url }}
-        run: python3 .github/scripts/daily_quote.py
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          python3 - <<'PY'
+          import base64, json, os, re
+          from pathlib import Path
+
+          def public_key(value):
+              if value.startswith("sb_publishable_"):
+                  return value
+              try:
+                  claims = value.split(".")[1]
+                  claims += "=" * (-len(claims) % 4)
+                  if json.loads(base64.urlsafe_b64decode(claims)).get("role") == "anon":
+                      return value
+              except (IndexError, ValueError, TypeError, AttributeError):
+                  pass
+              return ""
+
+          url = os.environ["SUPABASE_URL"].strip()
+          if not re.fullmatch(r"https://[a-z0-9-]+\.supabase\.co/?", url):
+              url = ""
+          key = public_key(os.environ["SUPABASE_PUBLISHABLE_KEY"].strip())
+          Path("memo/online-config.js").write_text(
+              f"const SHIRI_SUPABASE_URL = {json.dumps(url)};\n"
+              f"const SHIRI_SUPABASE_PUBLISHABLE_KEY = {json.dumps(key)};\n",
+              encoding="utf-8",
+          )
+          page = Path("memo/index.html")
+          html = page.read_text(encoding="utf-8")
+          version = os.environ["GITHUB_RUN_ID"]
+          page.write_text(html.replace('src="./online-config.js"', f'src="./online-config.js?v={version}"'), encoding="utf-8")
+          PY
       - uses: actions/upload-pages-artifact@v4
         with:
           path: memo

@@ -293,3 +293,8 @@ dialog::backdrop { background: #1b34255e; }
   .cat-card { order: 3; }
   .calendar-day { min-height: 45px; }
 }
+@media (max-width: 420px) {
+  .topbar-inner { flex-wrap: wrap; padding-block: 8px; }
+  .brand small { display: none; }
+  .header-actions { flex-wrap: wrap; justify-content: flex-end; }
+}

@@ -14,7 +14,7 @@ const quickCatReplies = {
   hug: "蹭蹭，给你一个暖乎乎的小猫抱抱喵。",
 };
 const catChatLocal = location.hostname === "127.0.0.1" && CAT_CHAT_ENDPOINT === `${location.origin}/api/chat`;
-let catChatUnlocked = catChatLocal;
+let catChatUnlocked = catChatLocal || browserModel;
 let catChatSending = false;
 let catHistoryLoading = false;
 
@@ -67,8 +67,9 @@ async function sendChat(event) {
   const endpoint = chatEndpoint();
   const content = catChatInput.value.trim();
   const accessCode = catChatCode.value.trim();
-  if (!endpoint || !content) return;
-  if (!catChatLocal && !/^[!-~]{16,120}$/.test(accessCode)) {
+  const usingQwen = browserModel && ShiriQwen.ready();
+  if ((!endpoint && !usingQwen) || !content) return;
+  if (!usingQwen && !catChatLocal && !/^[!-~]{16,120}$/.test(accessCode)) {
     setChatStatus("请输入站点管理员给你的聊天口令。");
     catChatCode.focus();
     return;
@@ -79,28 +80,36 @@ async function sendChat(event) {
   setChatStatus("");
   setChatSending(true);
   catChatInput.value = "";
+  const scope = notebookScope;
+  const owner = notebookAccount?.id;
   try {
-    const headers = { "Content-Type": "application/json" };
-    if (!catChatLocal) headers.Authorization = `Bearer ${accessCode}`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: chatRequestBody(message),
-      signal: AbortSignal.timeout(28000),
-      redirect: "error",
-      cache: "no-store",
-    });
-    if (response.status === 401 && !catChatLocal) {
-      catChatUnlocked = false;
-      $("cat-code-field").hidden = false;
-      catChatCode.value = "";
-      throw new Error("聊天口令有误，请重新输入。");
+    let reply, historySaved;
+    if (usingQwen) {
+      const context = [...catChatHistory.slice(-6), message].map((entry) => ({ ...entry, content: entry.content.slice(0, 1000) }));
+      reply = await ShiriQwen.chat(context);
+      if (scope !== notebookScope) return;
+      const day = dateKey(new Date());
+      ShiriQwen.remember(owner, { date: day, user: content, assistant: reply });
+      invalidateWeekSummary(startOfWeek(day));
+    } else {
+      const headers = { "Content-Type": "application/json" };
+      if (!catChatLocal) headers.Authorization = `Bearer ${accessCode}`;
+      const response = await fetch(endpoint, {
+        method: "POST", headers, body: chatRequestBody(message),
+        signal: AbortSignal.timeout(28000), redirect: "error", cache: "no-store",
+      });
+      if (response.status === 401 && !catChatLocal) {
+        catChatUnlocked = false;
+        $("cat-code-field").hidden = false;
+        catChatCode.value = "";
+        throw new Error("聊天口令有误，请重新输入。");
+      }
+      let errorMessage = "小猫暂时连不上，请稍后再试。";
+      if (response.status === 429) errorMessage = "消息发得有点快，等一分钟再试喵。";
+      if (response.status === 503) errorMessage = "聊天服务还需要完成配置。";
+      if (!response.ok) throw new Error(errorMessage);
+      ({ reply, historySaved } = await response.json());
     }
-    let errorMessage = "小猫暂时连不上，请稍后再试。";
-    if (response.status === 429) errorMessage = "消息发得有点快，等一分钟再试喵。";
-    if (response.status === 503) errorMessage = "聊天服务还需要完成配置。";
-    if (!response.ok) throw new Error(errorMessage);
-    const { reply, historySaved } = await response.json();
     if (typeof reply !== "string" || !reply.trim()) throw new Error("这次没有收到小猫的回复，请再试一次。");
     catChatHistory.push(message, { role: "assistant", content: reply });
     appendChatMessage("assistant", reply);
@@ -112,6 +121,7 @@ async function sendChat(event) {
     $("cat-code-field").hidden = true;
   } catch (error) {
     bubble.remove();
+    if (scope !== notebookScope) return;
     catChatInput.value = content;
     const knownError = error instanceof Error && !(error instanceof TypeError) &&
       !(error instanceof SyntaxError) && !(error instanceof DOMException);
@@ -127,6 +137,51 @@ catChatForm.hidden = !catChatEnabled;
 $("cat-quick-chat").hidden = catChatEnabled;
 $("cat-chat-unavailable").hidden = catChatEnabled || !fileBacked;
 $("cat-code-field").hidden = catChatUnlocked;
+if (browserModel) {
+  $("qwen-model-controls").hidden = false;
+  const launch = $("qwen-load");
+  const status = $("qwen-status");
+  status.textContent = "首次需下载本机模型，约 570–919 MB。";
+  launch.addEventListener("click", async () => {
+    launch.disabled = true;
+    status.textContent = "正在准备 Qwen3…";
+    try {
+      await ShiriQwen.load((progress) => { status.textContent = `正在下载模型文件 ${progress}%`; });
+      $("qwen-model-controls").hidden = true;
+      $("cat-quick-chat").hidden = true;
+      catChatForm.hidden = false;
+      $("cat-chat-note").textContent = "Qwen3 在此浏览器运行。";
+      restoreBrowserChat();
+      renderWeekSummary();
+      document.dispatchEvent(new Event("shiri:qwen-ready"));
+    } catch (error) {
+      status.textContent = error.message;
+      launch.disabled = false;
+    }
+  });
+  document.addEventListener("shiri:qwen-unavailable", () => {
+    $("qwen-model-controls").hidden = false;
+    $("cat-quick-chat").hidden = false;
+    catChatForm.hidden = true;
+    status.textContent = "Qwen3 已中断，可以重新启用或使用快捷回复。";
+    launch.disabled = false;
+    renderWeekSummary();
+  });
+}
+
+function restoreBrowserChat() {
+  catChatHistory.length = 0;
+  catChatLog.replaceChildren(catChatGreeting);
+  catChatInput.value = "";
+  setChatStatus("");
+  if (ShiriQwen.ready()) {
+    const messages = ShiriQwen.recent(notebookAccount?.id);
+    catChatHistory.push(...messages);
+    for (const message of messages) appendChatMessage(message.role, message.content);
+  }
+}
+
+if (browserModel) document.addEventListener("shiri:notebook-changed", restoreBrowserChat);
 
 async function restoreCatChat() {
   catHistoryLoading = true;
@@ -154,6 +209,16 @@ $("cat-quick-chat").addEventListener("click", (event) => {
 });
 $("cat-chat-clear").addEventListener("click", async () => {
   if (catChatSending || catHistoryLoading) return;
+  if (browserModel && ShiriQwen.ready()) {
+    if (!window.confirm("清空这个手账在此浏览器保存的对话？")) return;
+    try {
+      ShiriQwen.clear(notebookAccount?.id);
+    } catch {
+      setChatStatus("暂时无法清空此浏览器的对话。");
+      return;
+    }
+    invalidateWeekSummary();
+  }
   if (catChatLocal) {
     if (!window.confirm("清空本机保存的对话？之后生成的周报将无法使用这些对话。")) return;
     catHistoryLoading = true;

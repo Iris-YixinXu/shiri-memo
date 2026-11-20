@@ -4,7 +4,22 @@
 
 [打开网页](https://iris-yixinxu.github.io/shiri-memo/) · [下载完整项目 ZIP](https://github.com/Iris-YixinXu/shiri-memo/archive/refs/heads/main.zip)
 
-访问网页即可写记录、查看日历和点选小猫的短回复。网页上的短回复由浏览器提供，不调用付费 API。
+访客打开公开网页就可以写自己的日程。「今日安排」右上角的加号可以上传照片。访客的文字保存在当前浏览器，照片保存在该浏览器的 IndexedDB。分享网址不会分享日程。
+
+点击小猫卡片的 **启用 Qwen3 对话**，浏览器会首次下载约 570–919 MB 的 Qwen3-0.6B 量化模型。支持 WebGPU 的设备可在浏览器里生成聊天回复、周报和每日寄语。快捷回复可以直接使用，聊天和周报推理在设备上完成。
+
+想使用自己选择的供应商，可下载独立的 [拾日自选 API 版](https://github.com/Iris-YixinXu/shiri-memo-api)。
+
+## 配置公开版的账号登录
+
+账号上线前需要一个 [Supabase 项目](https://supabase.com/dashboard/projects)。
+
+1. 在该项目的 SQL Editor 运行 [supabase/schema.sql](supabase/schema.sql)，创建按用户隔离的手账和私有照片存储。
+2. 在 Supabase Authentication 的 URL Configuration 中，把 `https://iris-yixinxu.github.io/shiri-memo/` 配为 Site URL 和允许的重定向地址。启用 Email 登录并配置注册确认邮件。
+3. 在 GitHub 的 [Actions 仓库变量](https://github.com/Iris-YixinXu/shiri-memo/settings/variables/actions) 设置 `SUPABASE_URL`（形如 `https://项目编号.supabase.co`）和 `SUPABASE_PUBLISHABLE_KEY`。填写可公开的 publishable key，或旧版 anon key。
+4. 手动运行 [Publish 拾日](https://github.com/Iris-YixinXu/shiri-memo/actions/workflows/pages.yml)。完成后可用两个不同账号验证日程和照片互不可见。
+
+登录后可跨浏览器使用同一账号的手账。空手账可以在登录对话框选择 **导入此浏览器记录**，导入前的访客记录仍可以在该浏览器上使用。公开版的 Qwen3 对话记录保存在当前浏览器，并按账号分开。
 
 ## 下载到自己的电脑使用
 
@@ -26,6 +41,8 @@
 
 ## 本周回顾
 
+公开版启用 Qwen3 后，在「周报汇总」里点「让小猫总结」。小猫在当前浏览器读取所选周的记录和此浏览器为当前账号保存的对话。
+
 配置自己的 DeepSeek API Key 后，在本机手账的 **本周回顾** 里选择一周，再在下方的 **周报汇总** 点击 **让小猫总结**。小猫会根据所选周的对话和手账，用两到四句话写一段回顾。生成时发给 DeepSeek 的资料包括所选周的对话摘录、事项标题、分类、日期、完成状态和心情统计。日记正文、笔记正文和照片保存在本机。小结显示在当前页面会话里。
 
 本机对话从这一版开始保存。在聊天窗口点击 **清空** 可以删除本机保存的对话。公开网页的快捷回复不写入本机聊天历史。
@@ -34,7 +51,7 @@
 
 - [memo/](memo/) 是本机与 GitHub Pages 共用的网页。
 - [worker/](worker/) 包含本机服务、DeepSeek 聊天接口和可以修改的 [小猫 Prompt](worker/cat-prompt.mjs)。
-- [.github/workflows/pages.yml](.github/workflows/pages.yml) 发布网页、准备每日寄语。每日寄语与聊天是独立功能。
+- [.github/workflows/pages.yml](.github/workflows/pages.yml) 发布网页与账号配置。
 
 ## 可选的云端聊天
 
@@ -65,7 +82,3 @@
 4. 打开网页，在小猫卡片里填聊天口令，发送一句测试消息。
 
 以后修改小猫 Prompt 时，需要重新部署 Worker。只改网页时，提交到 GitHub 即可。
-
-## 每日寄语的密钥
-
-给每日寄语启用 DeepSeek 时，在 [GitHub 仓库的 Actions Secrets](https://github.com/Iris-YixinXu/shiri-memo/settings/secrets/actions) 添加 `DEEPSEEK_API_KEY`。这个设置只供每日发布流程使用，小猫聊天读取的是 Cloudflare 里的同名 Secret。

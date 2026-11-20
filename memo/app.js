@@ -47,12 +47,16 @@ const recordDialog = $("record-dialog");
 const libraryDialog = $("library-dialog");
 const editableTypes = new Set(["deadline", "event", "exam", "idea", "note"]);
 const fileBacked = typeof SHIRI_FILE_STORAGE !== "undefined" && SHIRI_FILE_STORAGE;
+const browserModel = !fileBacked && typeof SHIRI_BROWSER_MODEL !== "undefined" && SHIRI_BROWSER_MODEL;
 let storageError = false;
 let personal = readState();
 const browserSnapshot = personal;
 let storageRevision = null;
 let notebookReady = !fileBacked;
 let notebookSaving = false;
+let notebookAccount = null;
+let notebookScope = 0;
+const photoUrls = new Map();
 let example = exampleState();
 let demo = personal === null && !storageError;
 personal ??= emptyState();
@@ -158,6 +162,36 @@ async function saveLocalState(state, upload) {
   return localSnapshot(await fetch("/api/records", { method: "PUT", ...options }));
 }
 
+async function saveWebState(next, uploads, account, revision) {
+  const saved = [];
+  const deletePhoto = (photo) => account ? ShiriOnline.remove(account.id, photo.file) : ShiriPhotos.remove(photo.file);
+  try {
+    const previous = personal.records.flatMap((record) => record.photos ?? []);
+    const byId = new Map(next.records.map((record) => [record.id, record]));
+    for (const { recordId, files } of uploads) {
+      const record = byId.get(recordId);
+      for (const file of files) {
+        const blob = await ShiriPhotos.validatedPhoto(file);
+        const photo = { file: crypto.randomUUID(), date: record.date, name: file.name, source: account ? "account" : "browser" };
+        saved.push(photo);
+        if (account) await ShiriOnline.upload(account.id, photo.file, blob);
+        else await ShiriPhotos.save(photo.file, blob);
+        record.photos.push(photo);
+      }
+    }
+    let result = { state: next, revision: null };
+    if (account) result = await ShiriOnline.saveNotebook(account.id, next, revision);
+    else localStorage.setItem(storageKey, JSON.stringify(next));
+    const kept = new Set(next.records.flatMap((record) => (record.photos ?? []).map((photo) => photo.file)));
+    const removed = previous.filter((photo) => !kept.has(photo.file) && photo.source === (account ? "account" : "browser"));
+    await Promise.allSettled(removed.map(deletePhoto));
+    return result;
+  } catch (error) {
+    await Promise.allSettled(saved.map(deletePhoto));
+    throw error;
+  }
+}
+
 async function updateState(next, inDemo = demo, upload) {
   if (!notebookReady || notebookSaving) {
     notebookError(notebookSaving ? "正在保存，请稍等。" : "本机手账尚未读入，请刷新后再试。");
@@ -166,6 +200,7 @@ async function updateState(next, inDemo = demo, upload) {
   if (inDemo) {
     example = next;
   } else {
+    const scope = notebookScope;
     notebookSaving = true;
     $("save-record").disabled = $("delete-record").disabled = true;
     try {
@@ -174,12 +209,16 @@ async function updateState(next, inDemo = demo, upload) {
         personal = saved.state;
         storageRevision = saved.revision;
       } else {
-        localStorage.setItem(storageKey, JSON.stringify(next));
-        personal = next;
+        const uploads = upload?.files.length ? [upload] : [];
+        const saved = await saveWebState(next, uploads, notebookAccount, storageRevision);
+        if (scope !== notebookScope) return false;
+        personal = saved.state;
+        storageRevision = saved.revision;
       }
+      if (browserModel) weekSummaries.clear();
     } catch (error) {
-      notebookError(fileBacked ? (error instanceof TypeError ? "本机手账暂时无法连接，请重试。" : error.message) :
-        "浏览器暂时无法保存记录，请检查站点存储设置。");
+      if (scope === notebookScope) notebookError(error instanceof TypeError ?
+        "手账暂时无法连接，请重试。" : error.message || "暂时无法保存记录，请检查存储设置。");
       return false;
     } finally {
       notebookSaving = false;
@@ -394,14 +433,12 @@ function renderWeekly() {
   $("week-mood").textContent = moods.size ? [...moods].map(([mood, count]) => `${mood} ${count} 次`).join(" · ") :
     (journals.length ? "这周的日记还没有选择心情。" : "这周还没有日记。");
   renderRecap("week-journal-list", journals, "", (record) => record.mood);
-  if (fileBacked) {
-    renderWeekSummary();
-    renderWeeklyPhotos(sortByDate(records.filter((record) => inWeek(record.date) && record.photos?.length)));
-  }
+  if (fileBacked || browserModel) renderWeekSummary();
+  renderWeeklyPhotos(sortByDate(records.filter((record) => inWeek(record.date) && record.photos?.length)));
 }
 
 function renderWeekSummary() {
-  const enabled = Boolean(CAT_CHAT_ENDPOINT);
+  const enabled = browserModel ? ShiriQwen.ready() : Boolean(CAT_CHAT_ENDPOINT);
   const state = weekSummaries.get(week);
   const current = state?.revision === storageRevision ? state : undefined;
   const summary = !demo ? current?.summary : "";
@@ -414,14 +451,16 @@ function renderWeekSummary() {
   button.textContent = state?.busy ? "小猫在写…" : summary ? "重新生成" : "让小猫总结";
   text.textContent = summary ?? "";
   text.hidden = !summary;
-  status.textContent = !enabled ? "填好本机的 DeepSeek API Key 后即可生成。" :
+  status.textContent = !enabled ? (browserModel ? "在小猫聊天卡片启用 Qwen3 后即可生成。" : "填好本机的 DeepSeek API Key 后即可生成。") :
     demo ? "退出示例后，可以用自己的记录生成小结。" :
-    current?.error ?? (summary ? "" : "点击后会发送所选周的对话摘录、事项标题、日期、状态和心情统计。");
+    current?.error ?? (summary ? "" : browserModel ? "使用此设备上的 Qwen3 汇总所选周的记录和对话。" :
+      "点击后会发送所选周的对话摘录、事项标题、日期、状态和心情统计。");
   status.hidden = !status.textContent;
 }
 
 async function askForWeekSummary() {
-  if (!fileBacked || !notebookReady || notebookSaving || demo || !CAT_CHAT_ENDPOINT) return;
+  if ((!fileBacked && !browserModel) || !notebookReady || notebookSaving || demo ||
+      !(browserModel ? ShiriQwen.ready() : CAT_CHAT_ENDPOINT)) return;
   const start = week;
   const previous = weekSummaries.get(start);
   if (previous?.busy) return;
@@ -431,7 +470,9 @@ async function askForWeekSummary() {
   weekSummaries.set(start, pending);
   renderWeekSummary();
   try {
-    const result = await localSnapshot(await fetch(`/api/week-summary?week=${encodeURIComponent(start)}`, { method: "POST" }));
+    const result = browserModel ?
+      { summary: await ShiriQwen.recap(notebookAccount?.id, personal.records, start, offsetDate(start, 6)), revision } :
+      await localSnapshot(await fetch(`/api/week-summary?week=${encodeURIComponent(start)}`, { method: "POST" }));
     if (weekSummaries.get(start) !== pending) return;
     if (result.revision === storageRevision) {
       weekSummaries.set(start, { revision: result.revision, summary: result.summary });
@@ -452,17 +493,35 @@ function invalidateWeekSummary(start) {
   if (fileBacked) renderWeekSummary();
 }
 
+function photoUrl(photo) {
+  if (!photo.source) return Promise.resolve(`/api/photos/${encodeURIComponent(photo.date)}/${encodeURIComponent(photo.file)}`);
+  const owner = notebookAccount?.id;
+  const key = `${owner ?? "browser"}:${photo.file}`;
+  if (!photoUrls.has(key)) {
+    const scope = notebookScope;
+    const resource = photo.source === "account" && owner ? ShiriOnline.download(owner, photo.file) : ShiriPhotos.read(photo.file);
+    photoUrls.set(key, resource.then((blob) => {
+      if (!blob || scope !== notebookScope) return "";
+      return URL.createObjectURL(blob);
+    }).catch(() => ""));
+  }
+  return photoUrls.get(key);
+}
+
 function photoTile(photo, description) {
   const tile = element("figure", "photo-tile");
   const fullSize = element("a");
-  fullSize.href = `/api/photos/${encodeURIComponent(photo.date)}/${encodeURIComponent(photo.file)}`;
   fullSize.target = "_blank";
   fullSize.rel = "noopener";
   const thumbnail = element("img");
-  thumbnail.src = fullSize.href;
   thumbnail.alt = description;
   thumbnail.loading = "lazy";
   fullSize.append(thumbnail);
+  photoUrl(photo).then((url) => {
+    if (!url) return;
+    fullSize.href = url;
+    thumbnail.src = url;
+  });
   tile.append(fullSize);
   return tile;
 }
@@ -554,7 +613,7 @@ function openRecord(record = null, defaultDate = selected) {
   form.elements.body.value = record?.body ?? "";
   form.elements.mood.value = record?.mood ?? "";
   $("delete-record").hidden = record === null;
-  $("record-photo-section").hidden = !fileBacked || Boolean(record && demo);
+  $("record-photo-section").hidden = Boolean(record && demo);
   renderRecordPhotos();
   updateRecordFields();
   recordDialog.showModal();
@@ -581,12 +640,12 @@ async function saveRecord(event) {
     mood: type === "journal" ? form.elements.mood.value : "",
   };
   const inDemo = Boolean(demo && editing);
-  const files = fileBacked && !inDemo ? Array.from($("record-photos").files) : [];
+  const files = !inDemo ? Array.from($("record-photos").files) : [];
   if (files.length + recordPhotos.length > 6 || files.some((file) => !file.size || file.size > 10 * 1024 * 1024)) {
     notebookError("每条记录最多 6 张照片，每张最多 10 MB。");
     return;
   }
-  if (fileBacked && !inDemo) record.photos = recordPhotos;
+  if (!inDemo) record.photos = recordPhotos.map((photo) => ({ ...photo, date: record.date }));
   const data = inDemo ? example : personal;
   const records = editing ? data.records.map((item) => item.id === record.id ? record : item) : [...data.records, record];
   const focus = editableTypes.has(type) ? data.focus : removeFocus(data.focus, record.id);
@@ -594,7 +653,8 @@ async function saveRecord(event) {
   demo = inDemo;
   recordDialog.close();
   selectDate(record.date);
-  showToast(inDemo ? "示例已更新。" : fileBacked ? "已保存到本机手账。" : "记录已保存在此浏览器。");
+  showToast(inDemo ? "示例已更新。" : fileBacked ? "已保存到本机手账。" :
+    notebookAccount ? "已保存到你的账号手账。" : "记录已保存在此浏览器。");
 }
 
 function removeFocus(focus, id) {
@@ -687,6 +747,78 @@ async function initializeNotebook() {
   render();
 }
 
+async function openAccountNotebook(user) {
+  if (!user && !notebookAccount) return;
+  const scope = ++notebookScope;
+  notebookAccount = user;
+  notebookReady = false;
+  storageRevision = null;
+  demo = false;
+  if (recordDialog.open) recordDialog.close();
+  if (libraryDialog.open) libraryDialog.close();
+  for (const url of photoUrls.values()) url.then((value) => { if (value) URL.revokeObjectURL(value); });
+  photoUrls.clear();
+  weekSummaries.clear();
+  personal = emptyState();
+  document.dispatchEvent(new Event("shiri:notebook-changed"));
+  $("storage-label").textContent = user ? "账号手账" : "本机保存";
+  render();
+  try {
+    if (user) {
+      const result = await ShiriOnline.loadNotebook(user.id);
+      if (scope !== notebookScope) return;
+      personal = result.state ?? emptyState();
+      storageRevision = result.revision;
+    } else {
+      const guest = readState();
+      personal = guest ?? emptyState();
+      demo = !guest && !storageError;
+    }
+    notebookReady = true;
+    render();
+  } catch (error) {
+    if (scope === notebookScope) showToast(error.message);
+  }
+}
+
+function canImportGuest() {
+  return Boolean(notebookAccount && notebookReady && !personal.records.length && readState()?.records.length);
+}
+
+async function importGuestNotebook() {
+  if (!canImportGuest() || notebookSaving) return false;
+  const scope = notebookScope;
+  const owner = notebookAccount;
+  const guest = readState();
+  notebookSaving = true;
+  try {
+    const uploads = [];
+    for (const record of guest.records) {
+      const files = [];
+      for (const photo of record.photos ?? []) {
+        if (photo.source !== "browser") continue;
+        const blob = await ShiriPhotos.read(photo.file);
+        if (!blob) throw new Error("此浏览器里缺少一张照片。");
+        files.push(new File([blob], photo.name, { type: blob.type }));
+      }
+      record.photos = [];
+      if (files.length) uploads.push({ recordId: record.id, files });
+    }
+    const result = await saveWebState(guest, uploads, owner, storageRevision);
+    if (scope !== notebookScope) return false;
+    personal = result.state;
+    storageRevision = result.revision;
+    render();
+    return true;
+  } catch (error) {
+    if (scope === notebookScope) showToast(error.message);
+    return false;
+  } finally {
+    notebookSaving = false;
+  }
+}
+
 initializeNotebook();
 startCat($("cat-art"), $("cat-trigger"));
-if (fileBacked) startWeekCat($("week-cat-portrait"));
+if (fileBacked || browserModel) startWeekCat($("week-cat-portrait"));
+if (!fileBacked) ShiriOnline.start(openAccountNotebook, importGuestNotebook, canImportGuest);
