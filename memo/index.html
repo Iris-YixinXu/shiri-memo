@@ -10,6 +10,8 @@
   <script src="./cat.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./dashboard-extras.js" defer></script>
+  <script src="./chat-config.js" defer></script>
+  <script src="./cat-chat.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -67,13 +69,13 @@
           <div class="cat-top">
             <div class="cat-content">
               <div class="heading-title"><span class="heading-icon" data-icon="sparkles"></span><h2 id="cat-title">AI 小猫</h2></div>
-              <p>以后可以在这里和小猫聊天，聊聊今天，也可以一起回顾这一周。</p>
+              <p>聊聊今天的心情，让小猫陪你理一理。</p>
             </div>
             <button type="button" class="cat-pet" id="cat-pet" aria-label="随机切换小猫表情" title="点一下，随机换个表情">
               <canvas class="cat-art" id="cat-art" role="img" aria-label="简笔画小猫" width="420" height="300">简笔画小猫</canvas>
             </button>
           </div>
-          <div class="cat-input"><span data-icon="message"></span><span>聊天功能待接入</span><span class="coming-soon">预留</span></div>
+          <button type="button" class="cat-chat-entry" id="cat-chat-open"><span data-icon="message"></span> 和小猫聊天</button>
         </section>
       </div>
 
@@ -137,6 +139,31 @@
       </section>
     </div>
   </main>
+
+  <dialog class="cat-chat-dialog" id="cat-chat-dialog" aria-labelledby="cat-chat-title">
+    <div class="dialog-heading">
+      <div class="heading-title"><span class="heading-icon" data-icon="sparkles"></span><h2 id="cat-chat-title">和小猫聊天</h2></div>
+      <button class="icon-button" id="cat-chat-close" type="button" aria-label="关闭聊天" data-icon="close"></button>
+    </div>
+    <div class="chat-log" id="cat-chat-log" role="log" aria-label="与小猫的聊天记录">
+      <p class="chat-message assistant">喵喵，主人今天心情怎么样呀喵？</p>
+    </div>
+    <p class="chat-info" id="cat-chat-unavailable" hidden>聊天服务还在准备中。</p>
+    <form id="cat-chat-form" hidden>
+      <label class="field" id="cat-code-field">聊天口令
+        <input id="cat-chat-code" type="password" maxlength="120" autocomplete="off" spellcheck="false" placeholder="输入站点管理员给你的口令">
+      </label>
+      <label class="field">你的消息
+        <textarea id="cat-chat-input" rows="3" maxlength="1800" placeholder="今天，想和小猫说点什么？" required></textarea>
+      </label>
+      <p class="chat-info">发送的消息会交给 DeepSeek 回复。手账记录由你自己决定要不要分享。</p>
+      <p class="form-error" id="cat-chat-status" role="status" hidden></p>
+      <div class="dialog-actions">
+        <button class="button secondary" id="cat-chat-clear" type="button">清空聊天</button>
+        <button class="button primary" id="cat-chat-send" type="submit">发送</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="weather-dialog" aria-labelledby="weather-title">
     <div class="dialog-heading">
